@@ -13,26 +13,23 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5500',
+  origin: 'https://animehub-one.vercel.app',
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Session middleware
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(session({
-  name: 'connect.sid',
-  secret: process.env.SESSION_SECRET || 'defaultSecret',
+  secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI
-  }),
+store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
   cookie: {
     httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
-    maxAge: 1000 * 60 * 60,
+    secure: isProduction,           // true on Render
+    sameSite: isProduction ? 'none' : 'lax' // 'none' needed for cross-site cookies
   }
 }));
 
@@ -54,7 +51,7 @@ app.use('/api/messages', require('./routes/MessageRoute'));
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5500",
+    origin: "https://animehub-one.vercel.app",
     credentials: true,
   }
 });
