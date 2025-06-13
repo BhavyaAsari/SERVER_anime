@@ -1,0 +1,29 @@
+
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Debugging dumps
+*.pid
+*.seed
+*.pid.lock
+
+# System files
+.DS_Store
+Thumbs.db
+
+
+# Optional: coverage reports from testing
+coverage/
+
+# Optional: OS files
+*.swp
