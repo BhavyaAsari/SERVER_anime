@@ -1,188 +1,303 @@
-const express = require('express');
-const router = express.Router();
-const DirectMessage = require('../models/DirectMessage');
-const Message = require('../models/ChatModel'); // Assuming you have a Message model
-const isloggedIn = require('../MiddleWare/middleware');
-
-// ✅ Create or get existing one-on-one chat
-router.post('/', isloggedIn, async (req, res) => {
-  const userId = req.session.user._id;
-  const { otherUserId } = req.body;
-
-  console.log("userId from session:", userId);
-  console.log("otherUserId from request body:", otherUserId);
-
-  if (!userId || !otherUserId) {
-    return res.status(400).json({ message: "Both userId and otherUserId are required" });
-  }
-
+// Update your fetchUserProfile function
+async function fetchUserProfile() {
   try {
-    let chat = await DirectMessage.findOne({
-      members: { $all: [userId, otherUserId], $size: 2 },
-    }).populate("members", "username profilePicture email _id");
-
-    if (!chat) {
-      chat = new DirectMessage({
-        members: [userId, otherUserId],
-      });
-
-      await chat.save();
-      await chat.populate("members", "username profilePicture email _id");
-    }
-
-    // Format response with user info for easy frontend access
-    const formattedChat = {
-      ...chat.toObject(),
-      otherUser: chat.members.find(member => member._id.toString() !== userId.toString()),
-      currentUser: chat.members.find(member => member._id.toString() === userId.toString())
-    };
-
-    res.status(200).json(formattedChat);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// ✅ Get chat list with proper profile population
-router.get('/chatlist', isloggedIn, async (req, res) => {
-  const userId = req.session.user._id;
-
-  try {
-    const chats = await DirectMessage.find({
-      members: userId,
-    })
-      .populate("members", "username profilePicture email _id")
-      .populate({
-        path: "lastMessage",
-        populate: {
-          path: "sender",
-          select: "username profilePicture email _id",
-        },
-      })
-      .sort({ updatedAt: -1 });
-
-    // Format chats to include otherUser info for easy frontend access
-    const formattedChats = chats.map(chat => {
-      const otherUser = chat.members.find(member => 
-        member._id.toString() !== userId.toString()
-      );
-      
-      return {
-        ...chat.toObject(),
-        otherUser,
-        // Add profile picture URL if it exists
-        otherUserProfilePic: otherUser?.profilePicture ? 
-          `/uploads/profile-pics/${otherUser.profilePicture.split('/').pop()}` : null
-      };
+    const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
+      method: 'GET',
+      credentials: 'include', // ✅ This sends session cookies
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
-
-    res.status(200).json(formattedChats);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// ✅ Get messages for a specific chat with sender profile pictures
-router.get('/:chatId/messages', isloggedIn, async (req, res) => {
-  const userId = req.session.user._id;
-  const { chatId } = req.params;
-  const { page = 1, limit = 50 } = req.query;
-
-  try {
-    // Verify user is member of this chat
-    const chat = await DirectMessage.findOne({
-      _id: chatId,
-      members: userId
-    });
-
-    if (!chat) {
-      return res.status(404).json({ message: "Chat not found or access denied" });
-    }
-
-    // Get messages with sender profile pictures
-    const messages = await Message.find({ chatId })
-      .populate({
-        path: "sender",
-        select: "username profilePicture email _id"
-      })
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    // Format messages with profile picture URLs
-    const formattedMessages = messages.reverse().map(message => ({
-      ...message.toObject(),
-      senderProfilePic: message.sender?.profilePicture ? 
-        `PUBLIC/uploads/profile-pics/${message.sender.profilePicture.split('/').pop()}` : null
-    }));
-
-    res.status(200).json({
-      messages: formattedMessages,
-      currentPage: parseInt(page),
-      hasMore: messages.length === parseInt(limit)
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// ✅ Send message in chat
-router.post('/:chatId/messages', isloggedIn, async (req, res) => {
-  const userId = req.session.user._id;
-  const { chatId } = req.params;
-  const { content, messageType = 'text' } = req.body;
-
-  if (!content || !content.trim()) {
-    return res.status(400).json({ message: "Message content is required" });
-  }
-
-  try {
-    // Verify user is member of this chat
-    const chat = await DirectMessage.findOne({
-      _id: chatId,
-      members: userId
-    });
-
-    if (!chat) {
-      return res.status(404).json({ message: "Chat not found or access denied" });
-    }
-
-    // Create new message
-    const message = new Message({
-      chatId,
-      sender: userId,
-      content: content.trim(),
-      messageType
-    });
-
-    await message.save();
     
-    // Populate sender info including profile picture
-    await message.populate({
-      path: "sender",
-      select: "username profilePicture email _id"
-    });
-
-    // Update chat's lastMessage and updatedAt
-    chat.lastMessage = message._id;
-    chat.updatedAt = new Date();
-    await chat.save();
-
-    // Format response with profile picture URL
-    const formattedMessage = {
-      ...message.toObject(),
-      senderProfilePic: message.sender?.profilePicture ? 
-        `/uploads/profile-pics/${message.sender.profilePicture.split('/').pop()}` : null
-    };
-
-    res.status(201).json(formattedMessage);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    if (!response.ok) {
+      if (response.status === 401) {
+        console.log('User not authenticated');
+        return null;
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Fetch failed:', error);
+    return null;
   }
-});
+}
 
-module.exports = router;
+// Update your login function
+async function login(email, password) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      credentials: 'include', // ✅ Important for setting session
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, password })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Login failed');
+    }
+    
+    const result = await response.text();
+    console.log(result); // "Login successful"
+    return true;
+  } catch (error) {
+    console.error('Login error:', error);
+    return false;
+  }
+}
+
+// Update your logout function
+async function logout() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include', // ✅ Important for clearing session
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Logout failed');
+    }
+    
+    const result = await response.text();
+    console.log(result); // "Logged out successfully"
+    return true;
+  } catch (error) {
+    console.error('Logout error:', error);
+    return false;
+  }
+}
+
+// Update any other API calls (reviews, messages, etc.)
+async function submitReview(reviewData) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/reviews`, {
+      method: 'POST',
+      credentials: 'include', // ✅ Include in all authenticated requests
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(reviewData)
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to submit review');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Review submission error:', error);
+    throw error;
+  }
+}
+
+// Example for file uploads (profile pictures)
+async function uploadProfilePicture(formData) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/upload-profile-pic`, {
+      method: 'POST',
+      credentials: 'include', // ✅ Include for authenticated file uploads
+      body: formData // Don't set Content-Type for FormData
+    });
+    
+    if (!response.ok) {
+      throw new Error('Upload failed');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Upload error:', error);
+    throw error;
+  }
+}
+
+// ✅ Direct Message / Chat API Functions
+// Create or get existing one-on-one chat
+async function createOrGetChat(otherUserId) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/one-on-one`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ otherUserId })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to create/get chat');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Create chat error:', error);
+    throw error;
+  }
+}
+
+// Get chat list
+async function getChatList() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/one-on-one/chatlist`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get chat list');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Get chat list error:', error);
+    throw error;
+  }
+}
+
+// Get messages for a specific chat
+async function getChatMessages(chatId, page = 1, limit = 50) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/one-on-one/${chatId}/messages?page=${page}&limit=${limit}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get messages');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Get messages error:', error);
+    throw error;
+  }
+}
+
+// Send message in chat
+async function sendMessage(chatId, content, messageType = 'text') {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/one-on-one/${chatId}/messages`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content, messageType })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to send message');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Send message error:', error);
+    throw error;
+  }
+}
+
+// ✅ Other Auth API Functions
+// Get current user info
+async function getCurrentUser() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        return null; // User not authenticated
+      }
+      throw new Error('Failed to get user info');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Get current user error:', error);
+    return null;
+  }
+}
+
+// Search users
+async function searchUsers(query) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/search?q=${encodeURIComponent(query)}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Search failed');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Search users error:', error);
+    throw error;
+  }
+}
+
+// Update profile
+async function updateProfile(username, email) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/update-profile`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, email })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'Failed to update profile');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Update profile error:', error);
+    throw error;
+  }
+}
+
+// Delete profile picture
+async function deleteProfilePicture() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/delete-profile-pic`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete profile picture');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Delete profile picture error:', error);
+    throw error;
+  }
+}
