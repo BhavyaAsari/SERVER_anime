@@ -1,118 +1,237 @@
-// Update your fetchUserProfile function
-async function fetchUserProfile() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
-      method: 'GET',
-      credentials: 'include', // ✅ This sends session cookies
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.log('User not authenticated');
-        return null;
-      }
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Fetch failed:', error);
-    return null;
-  }
-}
+const express = require("express");
+const router = express.Router();
+const path = require("path");
+const User = require("../models/User");
+const isLoggedIn = require("../MiddleWare/middleware");
+const { uploadProfilePic, deleteFile, handleMulterError } = require("../Config/multerConfig.js");
 
-// Update your login function
-async function login(email, password) {
+// ✅ Signup route
+router.post("/signup", async (req, res) => {
+  const { username, email, password } = req.body;
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      credentials: 'include', // ✅ Important for setting session
-      headers: {
-        'Content-Type': 'application/json'
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).send("Email already in use");
+
+    let user = new User({ username, email, password });
+    await user.save();
+
+    res.status(201).send("User registered successfully!");
+  } catch (error) {
+    res.status(400).send("Error: " + error.message);
+  }
+});
+
+// ✅ Login route
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).send("Invalid credentials");
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) return res.status(400).send("Invalid credentials");
+
+    req.session.user = {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+    };
+
+    res.send("Login successful");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Server error");
+  }
+});
+
+// ✅ Get user profile
+router.get("/profile", isLoggedIn, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.user._id);
+    if (!user) return res.status(404).send("User not found");
+
+    const Review = require("../models/Review");
+    const reviewsCount = await Review.countDocuments({ user: user._id });
+
+    res.json({
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      profilePicture: user.profilePicture || null,
+      joinedAt: user.createdAt,
+      reviewsPosted: reviewsCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server error");
+  }
+});
+
+// ✅ Upload profile picture - FIXED path handling
+router.post(
+  "/upload-profile-pic",
+  isLoggedIn,
+  uploadProfilePic.single("profilePicture"),
+  handleMulterError,
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const userId = req.session.user._id;
+      const user = await User.findById(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      // ✅ FIXED: Delete old profile picture if exists
+      if (user.profilePicture) {
+        const oldPicPath = path.join(__dirname, "..", "public", user.profilePicture);
+        await deleteFile(oldPicPath);
+      }
+
+      // ✅ FIXED: Store relative path from public directory for serving static files
+      const profilePicturePath = `uploads/profile-pics/${req.file.filename}`;
+      user.profilePicture = profilePicturePath;
+
+      await user.save();
+
+
+
+      res.json({
+        message: "Profile picture uploaded successfully",
+        profilePicture: profilePicturePath,
+        filename: req.file.filename,
+      });
+    } catch (error) {
+      console.error("Profile picture upload error:", error);
+      res.status(500).json({ error: "Error uploading profile picture" });
+    }
+  }
+);
+
+// ✅ Delete profile picture - FIXED path handling
+router.delete("/delete-profile-pic", isLoggedIn, async (req, res) => {
+  try {
+    const userId = req.session.user._id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (!user.profilePicture) {
+      return res.status(400).json({ error: "No profile picture to delete" });
+    }
+
+    // ✅ FIXED: Correct path to delete file from public directory
+    const picPath = path.join(__dirname, "..", "public", user.profilePicture);
+    await deleteFile(picPath);
+
+    user.profilePicture = null;
+    await user.save();
+
+    res.json({ message: "Profile picture deleted successfully" });
+  } catch (error) {
+    console.error("Delete profile picture error:", error);
+    res.status(500).json({ error: "Error deleting profile picture" });
+  }
+});
+
+// ✅ Update profile
+router.post("/update-profile", isLoggedIn, async (req, res) => {
+  try {
+    const { username, email } = req.body;
+    const userId = req.session.user._id;
+
+    if (!username || !email) {
+      return res.status(400).send("Username and email are required");
+    }
+
+    const existingUser = await User.findOne({
+      email,
+      _id: { $ne: userId },
+    });
+
+    if (existingUser) {
+      return res.status(400).send("Email is already taken by another user");
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { username, email },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) return res.status(404).send("User not found");
+
+    req.session.user.username = updatedUser.username;
+    req.session.user.email = updatedUser.email;
+
+    res.json({
+      message: "Profile updated successfully",
+      user: {
+        id: updatedUser._id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        profilePicture: updatedUser.profilePicture,
       },
-      body: JSON.stringify({ email, password })
     });
-    
-    if (!response.ok) {
-      throw new Error('Login failed');
-    }
-    
-    const result = await response.text();
-    console.log(result); // "Login successful"
-    return true;
   } catch (error) {
-    console.error('Login error:', error);
-    return false;
+    console.error("Update profile error:", error);
+    res.status(500).send("Server error while updating profile");
   }
-}
+});
 
-// Update your logout function
-async function logout() {
+// ✅ Get current user info
+router.get('/me', isLoggedIn, async (req, res) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
-      method: 'POST',
-      credentials: 'include', // ✅ Important for clearing session
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error('Logout failed');
+    const user = await User.findById(req.session.user._id)
+      .select('username email _id profilePicture');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
     }
-    
-    const result = await response.text();
-    console.log(result); // "Logged out successfully"
-    return true;
-  } catch (error) {
-    console.error('Logout error:', error);
-    return false;
+    res.json(user);
+  } catch (err) {
+    console.error('Error getting user info:', err);
+    res.status(500).json({ message: 'Server error' });
   }
-}
+});
 
-// Update any other API calls (reviews, messages, etc.)
-async function submitReview(reviewData) {
+// ✅ Search users
+router.get('/search', isLoggedIn, async (req, res) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/reviews`, {
-      method: 'POST',
-      credentials: 'include', // ✅ Include in all authenticated requests
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(reviewData)
-    });
+    const { q } = req.query;
+    const currentUserId = req.session.user._id;
     
-    if (!response.ok) {
-      throw new Error('Failed to submit review');
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({ message: 'Query must be at least 2 characters' });
     }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Review submission error:', error);
-    throw error;
-  }
-}
 
-// Example for file uploads (profile pictures)
-async function uploadProfilePicture(formData) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/upload-profile-pic`, {
-      method: 'POST',
-      credentials: 'include', // ✅ Include for authenticated file uploads
-      body: formData // Don't set Content-Type for FormData
-    });
-    
-    if (!response.ok) {
-      throw new Error('Upload failed');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Upload error:', error);
-    throw error;
+    const users = await User.find({
+      $and: [
+        { _id: { $ne: currentUserId } },
+        {
+          $or: [
+            { username: { $regex: q.trim(), $options: 'i' } },
+            { email: { $regex: q.trim(), $options: 'i' } }
+          ]
+        }
+      ]
+    })
+    .select('username email _id profilePicture')
+    .limit(10);
+
+    res.json(users);
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ message: 'Server error' });
   }
-}
+});
+
+// ✅ Logout
+router.post("/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) return res.status(500).send("Logout failed");
+    res.clearCookie("connect.sid");
+    res.send("Logged out successfully");
+  });
+});
+
+module.exports = router;
