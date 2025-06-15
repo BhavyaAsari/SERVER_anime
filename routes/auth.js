@@ -67,7 +67,7 @@ router.get("/profile", isLoggedIn, async (req, res) => {
   }
 });
 
-// ✅ Upload profile picture - FIXED path handling
+// ✅ Upload profile picture - Updated for Cloudinary
 router.post(
   "/upload-profile-pic",
   isLoggedIn,
@@ -83,23 +83,22 @@ router.post(
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ error: "User not found" });
 
-      // ✅ FIXED: Delete old profile picture if exists
+      // ✅ Delete old profile picture from Cloudinary if exists
       if (user.profilePicture) {
-        const oldPicPath = path.join(__dirname, "..", "public", user.profilePicture);
-        await deleteFile(oldPicPath);
+        // Extract public_id from the Cloudinary URL
+        const publicId = user.profilePicture.split('/').pop().split('.')[0];
+        const fullPublicId = `animehub/profile-pics/${publicId}`;
+        await deleteFile(fullPublicId);
       }
 
-      // ✅ FIXED: Store relative path from public directory for serving static files
-      const profilePicturePath = `uploads/profile-pics/${req.file.filename}`;
-      user.profilePicture = profilePicturePath;
+      // ✅ Store Cloudinary URL
+      user.profilePicture = req.file.path; // Cloudinary URL
 
       await user.save();
 
-
-
       res.json({
         message: "Profile picture uploaded successfully",
-        profilePicture: profilePicturePath,
+        profilePicture: req.file.path,
         filename: req.file.filename,
       });
     } catch (error) {
@@ -109,7 +108,7 @@ router.post(
   }
 );
 
-// ✅ Delete profile picture - FIXED path handling
+// ✅ Delete profile picture - Updated for Cloudinary
 router.delete("/delete-profile-pic", isLoggedIn, async (req, res) => {
   try {
     const userId = req.session.user._id;
@@ -120,9 +119,10 @@ router.delete("/delete-profile-pic", isLoggedIn, async (req, res) => {
       return res.status(400).json({ error: "No profile picture to delete" });
     }
 
-    // ✅ FIXED: Correct path to delete file from public directory
-    const picPath = path.join(__dirname, "..", "public", user.profilePicture);
-    await deleteFile(picPath);
+    // ✅ Extract public_id from Cloudinary URL and delete from Cloudinary
+    const publicId = user.profilePicture.split('/').pop().split('.')[0];
+    const fullPublicId = `animehub/profile-pics/${publicId}`;
+    await deleteFile(fullPublicId);
 
     user.profilePicture = null;
     await user.save();

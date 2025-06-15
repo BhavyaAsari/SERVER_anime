@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const path = require('path');
+const cloudinary = require('cloudinary').v2;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,8 @@ app.use(cors({
   origin: 'https://animehub-one.vercel.app',
   credentials: true
 }));
+
+cloudinary.config();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

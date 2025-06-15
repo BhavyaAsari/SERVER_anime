@@ -1,28 +1,24 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const mongoose = require('mongoose'); // Add this import
+const mongoose = require('mongoose');
 const isLoggedIn = require('../MiddleWare/middleware');
 const DirectMessage = require('../models/DirectMessage');
 const Message = require('../models/ChatModel');
-const { uploadGeneral, handleMulterError } = require('../Config/multerConfig');
+const { uploadGeneral, handleMulterError, deleteFile } = require('../Config/multerConfig');
 
-// ✅ Get messages for a chat - IMPROVED VERSION
+// ✅ Get messages for a chat - IMPROVED VERSION (No changes needed)
 router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
   try {
     const chatId = req.params.chatId;
     
-    // ✅ Add detailed logging
     console.log('Fetching messages for chatId:', chatId);
     console.log('User session:', req.session?.user?._id);
     
-    // ✅ Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(chatId)) {
       console.log('Invalid ObjectId format:', chatId);
       return res.status(400).json({ error: "Invalid chat ID format." });
     }
 
-    // ✅ Check session user exists
     if (!req.session?.user?._id) {
       console.log('No user in session');
       return res.status(401).json({ error: "User not authenticated." });
@@ -31,7 +27,6 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
     const userId = req.session.user._id;
     console.log('Authenticated user:', userId);
 
-    // ✅ Add try-catch for database operations
     let directMessage;
     try {
       directMessage = await DirectMessage.findById(chatId);
@@ -46,7 +41,6 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
       return res.status(404).json({ error: "Chat not found." });
     }
 
-    // ✅ Check if user is a participant with better logging
     const isParticipant = directMessage.participants.some(
       participant => {
         const participantId = participant.toString();
@@ -63,7 +57,6 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
       return res.status(403).json({ error: "Not authorized to view this chat." });
     }
 
-    // ✅ Fetch messages with error handling
     let messages;
     try {
       messages = await Message.find({ 
@@ -72,7 +65,7 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
       })
         .populate("sender", "username profilePicture avatar")
         .sort({ createdAt: 1 })
-        .lean(); // Add lean() for better performance
+        .lean();
 
       console.log('Messages found:', messages.length);
     } catch (dbError) {
@@ -80,7 +73,6 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
       return res.status(500).json({ error: "Error fetching messages from database." });
     }
 
-    // ✅ Validate populated data
     const validMessages = messages.map(msg => ({
       ...msg,
       sender: msg.sender || { username: 'Unknown User', profilePicture: null, avatar: null }
@@ -97,12 +89,11 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
   }
 });
 
-// ✅ Send message with optional image upload - IMPROVED VERSION
+// ✅ Send message with optional image upload - UPDATED FOR CLOUDINARY
 router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, async (req, res) => {
   try {
     const { chat, content } = req.body;
     
-    // ✅ Add session validation
     if (!req.session?.user?._id) {
       return res.status(401).json({ error: "User not authenticated." });
     }
@@ -111,14 +102,13 @@ router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, a
     
     console.log('Sending message to chat:', chat, 'from user:', sender);
     
-    // Handle uploaded image
+    // ✅ UPDATED: Handle uploaded image from Cloudinary
     let imageUrl = null;
     if (req.file) {
-      imageUrl = `/uploads/general/${req.file.filename}`;
-      console.log('Image uploaded:', imageUrl);
+      imageUrl = req.file.path; // Cloudinary URL instead of local path
+      console.log('Image uploaded to Cloudinary:', imageUrl);
     }
 
-    // ✅ Validate chat ID format
     if (!chat || !mongoose.Types.ObjectId.isValid(chat)) {
       return res.status(400).json({ error: "Valid chat ID is required." });
     }
@@ -127,7 +117,6 @@ router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, a
       return res.status(400).json({ error: "Message content or image is required." });
     }
 
-    // ✅ Verify the DirectMessage exists and user is a participant
     let directMessage;
     try {
       directMessage = await DirectMessage.findById(chat);
@@ -140,7 +129,6 @@ router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, a
       return res.status(404).json({ error: "Chat not found." });
     }
 
-    // Check if user is a participant in this chat
     const isParticipant = directMessage.participants.some(
       participant => participant.toString() === sender.toString()
     );
@@ -162,13 +150,11 @@ router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, a
     const saved = await message.save();
     console.log('Message saved:', saved._id);
 
-    // Update the lastMessage in DirectMessage
     await DirectMessage.findByIdAndUpdate(chat, { 
       lastMessage: saved._id,
       updatedAt: new Date()
     });
 
-    // Populate sender info for the response
     const populatedMessage = await Message.findById(saved._id)
       .populate("sender", "username profilePicture avatar");
 
@@ -183,8 +169,7 @@ router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, a
   }
 });
 
-// Keep your other routes (mark as read, delete) as they are...
-// ✅ Mark a message as read
+// ✅ Mark a message as read (No changes needed)
 router.patch('/:messageId/read', isLoggedIn, async (req, res) => {
   try {
     const messageId = req.params.messageId;
@@ -195,12 +180,10 @@ router.patch('/:messageId/read', isLoggedIn, async (req, res) => {
     
     const userId = req.session.user._id;
 
-    // Validate messageId format
     if (!mongoose.Types.ObjectId.isValid(messageId)) {
       return res.status(400).json({ error: "Invalid message ID format." });
     }
 
-    // Find the message and verify it's a DirectMessage
     const message = await Message.findOne({
       _id: messageId,
       chatModel: "DirectMessage"
@@ -210,7 +193,6 @@ router.patch('/:messageId/read', isLoggedIn, async (req, res) => {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    // Verify user is participant in the chat
     const directMessage = await DirectMessage.findById(message.chat);
     if (!directMessage) {
       return res.status(404).json({ error: "Chat not found" });
@@ -237,7 +219,7 @@ router.patch('/:messageId/read', isLoggedIn, async (req, res) => {
   }
 });
 
-// ✅ Delete a message (only sender can delete)
+// ✅ Delete a message - UPDATED FOR CLOUDINARY
 router.delete('/:messageId', isLoggedIn, async (req, res) => {
   try {
     if (!req.session?.user?._id) {
@@ -247,7 +229,6 @@ router.delete('/:messageId', isLoggedIn, async (req, res) => {
     const userId = req.session.user._id;
     const messageId = req.params.messageId;
 
-    // Validate messageId format
     if (!mongoose.Types.ObjectId.isValid(messageId)) {
       return res.status(400).json({ error: "Invalid message ID format." });
     }
@@ -265,11 +246,20 @@ router.delete('/:messageId', isLoggedIn, async (req, res) => {
       return res.status(403).json({ error: "Not authorized to delete this message" });
     }
 
-    // Delete associated image file if it exists
+    // ✅ UPDATED: Delete image from Cloudinary instead of local filesystem
     if (message.imageUrl) {
-      const { deleteFile } = require('../Config/multerConfig');
-      const imagePath = path.join(__dirname, '..', 'public', message.imageUrl);
-      deleteFile(imagePath);
+      try {
+        // Extract public_id from Cloudinary URL
+        const urlParts = message.imageUrl.split('/');
+        const filename = urlParts[urlParts.length - 1];
+        const publicId = `animehub/general/${filename.split('.')[0]}`;
+        
+        await deleteFile(publicId);
+        console.log('Image deleted from Cloudinary:', publicId);
+      } catch (deleteError) {
+        console.error('Error deleting image from Cloudinary:', deleteError);
+        // Continue with message deletion even if image deletion fails
+      }
     }
 
     await Message.findByIdAndDelete(messageId);
@@ -277,7 +267,6 @@ router.delete('/:messageId', isLoggedIn, async (req, res) => {
     // Update lastMessage in DirectMessage if this was the last message
     const directMessage = await DirectMessage.findById(message.chat);
     if (directMessage && directMessage.lastMessage && directMessage.lastMessage.toString() === messageId) {
-      // Find the previous message to set as lastMessage
       const previousMessage = await Message.findOne({
         chat: message.chat,
         chatModel: "DirectMessage"

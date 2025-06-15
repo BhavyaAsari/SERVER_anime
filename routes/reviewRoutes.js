@@ -1,31 +1,39 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
 const isLoggedIn = require('../MiddleWare/middleware');
 const Review = require('../models/Review');
 const { uploadReviewImage, handleMulterError, deleteFile } = require('../Config/multerConfig');
 
-// Helper function to get consistent public directory path
-const getPublicPath = () => {
-  return path.join(__dirname, '..', 'public');
+// Helper function to extract Cloudinary public ID from URL
+const extractPublicId = (imageUrl) => {
+  if (!imageUrl) return null;
+  
+  try {
+    // Extract the public ID from Cloudinary URL
+    // Example: https://res.cloudinary.com/your-cloud/image/upload/v1234567890/animehub/review-images/filename.jpg
+    const urlParts = imageUrl.split('/');
+    const filename = urlParts[urlParts.length - 1];
+    const publicId = `animehub/review-images/${filename.split('.')[0]}`;
+    return publicId;
+  } catch (error) {
+    console.error('Error extracting public ID:', error);
+    return null;
+  }
 };
-// Helper function to safely delete image files
-const safeDeleteImage = (imageUrl) => {
+
+// Helper function to safely delete image from Cloudinary
+const safeDeleteImage = async (imageUrl) => {
   if (!imageUrl) return false;
   
   try {
-    // Remove leading slash if present
-    const cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
-    const fullPath = path.join(getPublicPath(), cleanPath);
-    
-    if (fs.existsSync(fullPath)) {
-      fs.unlinkSync(fullPath);
+    const publicId = extractPublicId(imageUrl);
+    if (publicId) {
+      await deleteFile(publicId);
       return true;
-    } else {
-      return false;
     }
+    return false;
   } catch (error) {
+    console.error('Error deleting image from Cloudinary:', error);
     return false;
   }
 };
@@ -55,8 +63,9 @@ router.post(
         return res.status(400).json({ error: 'Rating must be between 1 and 5' });
       }
 
-      // Handle image path - store relative path without leading slash
-const animeImagePath = req.file ? `/uploads/review-images/${req.file.filename}` : '';
+      // Handle image path - store full Cloudinary URL
+      const animeImagePath = req.file ? req.file.path : '';
+      
       const review = new Review({
         user: userId,
         animeTitle: animeTitle.trim(),
@@ -77,8 +86,8 @@ const animeImagePath = req.file ? `/uploads/review-images/${req.file.filename}` 
       console.error('Error creating review:', error);
       
       // Clean up uploaded file if review creation failed
-      if (req.file) {
-        safeDeleteImage(`uploads/review-images/${req.file.filename}`);
+      if (req.file && req.file.path) {
+        await safeDeleteImage(req.file.path);
       }
       
       res.status(500).json({ error: 'Server error while creating review' });
@@ -155,11 +164,12 @@ router.put(
       if (req.file) {
         // Delete old image if it exists
         if (review.animeImageUrl) {
-          safeDeleteImage(review.animeImageUrl);
+          await safeDeleteImage(review.animeImageUrl);
         }
         
-        // Set new image path
-review.animeImageUrl = `/uploads/review-images/${req.file.filename}`;      }
+        // Set new image path (full Cloudinary URL)
+        review.animeImageUrl = req.file.path;
+      }
 
       // Update review fields
       review.animeTitle = animeTitle.trim();
@@ -175,8 +185,8 @@ review.animeImageUrl = `/uploads/review-images/${req.file.filename}`;      }
       console.error('Error updating review:', err);
       
       // Clean up uploaded file if update failed
-      if (req.file) {
-        safeDeleteImage(`uploads/review-images/${req.file.filename}`);
+      if (req.file && req.file.path) {
+        await safeDeleteImage(req.file.path);
       }
       
       res.status(500).json({ error: 'Server error while updating review' });
@@ -200,9 +210,9 @@ router.delete('/:id', isLoggedIn, async (req, res) => {
       return res.status(403).json({ error: 'You can only delete your own reviews' });
     }
 
-    // Delete associated image file
+    // Delete associated image file from Cloudinary
     if (review.animeImageUrl) {
-      safeDeleteImage(review.animeImageUrl);
+      await safeDeleteImage(review.animeImageUrl);
     }
 
     // Delete the review
