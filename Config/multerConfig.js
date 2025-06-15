@@ -2,8 +2,12 @@ const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const cloudinary = require("cloudinary").v2;
 
-// ✅ Cloudinary config - automatically reads CLOUDINARY_URL from environment
-cloudinary.config(); // This automatically reads process.env.CLOUDINARY_URL
+// ✅ Cloudinary config - explicit configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // ✅ Image filter: allow only image files
 const imageFilter = (req, file, cb) => {
