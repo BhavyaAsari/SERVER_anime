@@ -30,11 +30,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
   saveUninitialized: false,
-store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
+  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
   cookie: {
     httpOnly: true,
-    secure: isProduction,           // true on Render
-    sameSite: isProduction ? 'none' : 'lax' // 'none' needed for cross-site cookies
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax'
   }
 }));
 
@@ -46,11 +46,11 @@ mongoose.connect(process.env.MONGODB_URI)
 // ✅ Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Routes
+// ✅ Routes - FIXED: Only one messaging route
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
-app.use('/api/one-on-one', require('./routes/DirectMessageRoute'));
-app.use('/api/messages', require('./routes/MessageRoute'));
+app.use('/api/one-on-one', require('./routes/DirectMessageRoute')); // ✅ Keep this one
+// app.use('/api/messages', require('./routes/MessageRoute')); // ❌ Remove this
 
 // ✅ Socket server
 const server = http.createServer(app);
@@ -63,18 +63,18 @@ const io = new Server(server, {
 
 io.on('connection', (socket) => {
   console.log('A user connected with id: ', socket.id);
-
+  
   socket.on('joinChat', (chatId) => {
     socket.join(chatId);
     console.log(`User joined private room: ${chatId}`);
   });
-
+  
   socket.on('sendMessage', (data) => {
     const {
       chatId, content, senderId, senderName, username,
       profilePicture, receiverId
     } = data;
-
+    
     io.to(chatId).emit('receiveMessage', {
       chatId,
       content,
@@ -85,10 +85,10 @@ io.on('connection', (socket) => {
       receiverId,
       timestamp: new Date(),
     });
-
+    
     console.log(`Message sent in room ${chatId} by ${senderName || username}`);
   });
-
+  
   socket.on('disconnect', () => {
     console.log("A user disconnected: ", socket.id);
   });
@@ -96,7 +96,7 @@ io.on('connection', (socket) => {
 
 // ✅ Health route
 app.get('/', (req, res) => {
-  res.send(' Your AnimeHub backend is working!');
+  res.send('Your AnimeHub backend is working!');
 });
 
 // ✅ Start server
