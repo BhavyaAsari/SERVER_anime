@@ -54,8 +54,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ✅ Routes - FIXED: Only one messaging route
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
-app.use('/api/one-on-one', require('./routes/DirectMessageRoute')); // ✅ Keep this one
-// app.use('/api/messages', require('./routes/MessageRoute')); // ❌ Remove this
+// app.use('/api/one-on-one', require('./routes/DirectMessageRoute')); // ✅ Keep this one
+app.use('/api/messages', require('./routes/MessageRoute')); 
 
 // ✅ Socket server
 const server = http.createServer(app);
