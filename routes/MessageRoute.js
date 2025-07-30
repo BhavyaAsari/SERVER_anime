@@ -41,7 +41,7 @@ router.get('/chat/:chatId', isLoggedIn, async (req, res) => {
       return res.status(404).json({ error: "Chat not found." });
     }
 
-    const isParticipant = directMessage.participants.some(
+    const isParticipant = directMessage.members.some(
       participant => {
         const participantId = participant.toString();
         const currentUserId = userId.toString();
@@ -129,7 +129,7 @@ router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, a
       return res.status(404).json({ error: "Chat not found." });
     }
 
-    const isParticipant = directMessage.participants.some(
+    const isParticipant = directMessage.members.some(
       participant => participant.toString() === sender.toString()
     );
     
@@ -198,7 +198,7 @@ router.patch('/:messageId/read', isLoggedIn, async (req, res) => {
       return res.status(404).json({ error: "Chat not found" });
     }
 
-    const isParticipant = directMessage.participants.some(
+    const isParticipant = directMessage.members.some(
       participant => participant.toString() === userId.toString()
     );
     

@@ -20,6 +20,11 @@ app.use(cors({
   credentials: true
 }));
 
+app.options('*', cors({
+  origin: 'https://animehub-one.vercel.app',
+  credentials: true
+}));
+
 cloudinary.config();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
