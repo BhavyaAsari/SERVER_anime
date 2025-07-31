@@ -204,7 +204,7 @@ router.get('/:chatId/messages', isloggedIn, async (req, res) => {
     }
 
     // Get messages with sender profile pictures
-    const messages = await Message.find({ chatId })
+    const messages = await Message.find({chat: chatId })
       .populate({
         path: "sender",
         select: "username profilePicture email _id"
