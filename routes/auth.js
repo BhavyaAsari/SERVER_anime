@@ -183,7 +183,7 @@ router.post("/update-profile", isLoggedIn, async (req, res) => {
 router.get('/me', isLoggedIn, async (req, res) => {
   try {
     const user = await User.findById(req.session.user._id)
-      .select('username email _id profilePicture');
+    .select('username email _id profilePicture createdAt'); 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
