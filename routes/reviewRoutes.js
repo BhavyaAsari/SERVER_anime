@@ -79,7 +79,6 @@ router.post(
       // Populate user info before sending response
       await review.populate('user', 'username');
       
-      console.log('Review saved successfully:', review._id);
       res.status(201).json({ message: 'Review added successfully', review });
       
     } catch (error) {
@@ -102,7 +101,6 @@ router.get('/', async (req, res) => {
       .populate('user', 'username')
       .sort({ createdAt: -1 }); // Sort by newest first
     
-    console.log(`Fetched ${reviews.length} reviews`);
     res.json(reviews);
     
   } catch (error) {
@@ -118,7 +116,6 @@ router.get('/my', isLoggedIn, async (req, res) => {
     const reviews = await Review.find({ user: userId })
       .sort({ createdAt: -1 }); // Sort by newest first
     
-    console.log(`Fetched ${reviews.length} reviews for user ${userId}`);
     res.json(reviews);
     
   } catch (err) {
@@ -178,7 +175,6 @@ router.put(
 
       await review.save();
       
-      console.log('Review updated successfully:', reviewId);
       res.json({ message: 'Review updated successfully', review });
       
     } catch (err) {
@@ -218,7 +214,6 @@ router.delete('/:id', isLoggedIn, async (req, res) => {
     // Delete the review
     await review.deleteOne();
     
-    console.log('Review deleted successfully:', reviewId);
     res.json({ message: 'Review deleted successfully' });
     
   } catch (err) {
