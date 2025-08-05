@@ -10,76 +10,122 @@ const path = require('path');
 const cloudinary = require('cloudinary').v2;
 
 const app = express();
+
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', 1);
-
-// Middleware
-app.use(cors({
-  origin: 'https://animehub-one.vercel.app',
-  credentials: true
-}));
-
-app.options('*', cors({
-  origin: 'https://animehub-one.vercel.app',
-  credentials: true
-}));
-
-cloudinary.config();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
+// ✅ Must declare first before using
 const isProduction = process.env.NODE_ENV === 'production';
 
+// ✅ Updated allowedOrigins to include your frontend URL
+const allowedOrigins = isProduction
+  ? ['https://animehub-one.vercel.app']
+  : [
+      'http://localhost:5173', 
+      'http://localhost:3500', 
+      'http://localhost:5500',
+      'http://127.0.0.1:5500',  // Sometimes Live Server uses 127.0.0.1
+      'null' // For file:// protocol during development
+    ];
+
+// ✅ CORS setup with better error handling
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
+// ✅ Handle preflight requests
+// 
+// cloudinary.config();
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ✅ Session handling with updated configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default_secret',
+  secret: process.env.SESSION_SECRET || 'default_secret_change_in_production',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
+  store: MongoStore.create({ 
+    mongoUrl: process.env.MONGODB_URI,
+    touchAfter: 24 * 3600 // lazy session update
+  }),
   cookie: {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax'
+    httpOnly: false,
+    secure: isProduction, // Only secure in production
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
+
+
 
 // ✅ MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected successfully"))
-  .catch((err) => console.error("MongoDB connection failed:", err));
+  .catch((err) => console.error("❌ MongoDB connection failed:", err));
 
-// ✅ Static files
+// ✅ Serve static files (if any)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Routes - FIXED: Only one messaging route
+// ✅ API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
-app.use('/api/one-on-one', require('./routes/DirectMessageRoute')); 
-app.use('/api/messages', require('./routes/MessageRoute')); 
+app.use('/api/one-on-one', require('./routes/DirectMessageRoute'));
+app.use('/api/messages', require('./routes/MessageRoute'));
 
-// ✅ Socket server
+// // ✅ 🔧 Test Route to Set Session
+// app.get('/api/test-set-session', (req, res) => {
+//   req.session.user = {
+//     id: '12345',
+//     name: 'Test User',
+//     role: 'admin'
+//   };
+//   res.json({ message: '✅ Session set!', session: req.session });
+// });
+
+// app.get('/api/test-get-session', (req, res) => {
+//   if (req.session.user) {
+//     res.json({
+//       message: '✅ Session exists!',
+//       user: req.session.user
+//     });
+//   } else {
+//     res.json({ message: '🚫 No session found' });
+//   }
+// });
+
+
+// ✅ HTTP + WebSocket server
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
-    origin: "https://animehub-one.vercel.app",
+    origin: isProduction
+      ? ["https://animehub-one.vercel.app"]
+      : [
+          "http://localhost:5500",
+          "http://localhost:5173", 
+          "http://localhost:3500",
+          "http://127.0.0.1:5500"
+        ],
     credentials: true,
+    methods: ["GET", "POST"]
   }
 });
 
 io.on('connection', (socket) => {
-  console.log('A user connected with id: ', socket.id);
-  
+
   socket.on('joinChat', (chatId) => {
     socket.join(chatId);
-    console.log(`User joined private room: ${chatId}`);
   });
-  
+
   socket.on('sendMessage', (data) => {
     const {
       chatId, content, senderId, senderName, username,
       profilePicture, receiverId
     } = data;
-    
+
     io.to(chatId).emit('receiveMessage', {
       chatId,
       content,
@@ -90,21 +136,32 @@ io.on('connection', (socket) => {
       receiverId,
       timestamp: new Date(),
     });
-    
-    console.log(`Message sent in room ${chatId} by ${senderName || username}`);
+
   });
-  
+
   socket.on('disconnect', () => {
-    console.log("A user disconnected: ", socket.id);
   });
 });
 
-// ✅ Health route
+// ✅ Health check route
 app.get('/', (req, res) => {
-  res.send('Your AnimeHub backend is working!');
+  res.json({ 
+    message: 'Your AnimeHub backend is working!',
+    timestamp: new Date().toISOString(),
+    environment: isProduction ? 'production' : 'development'
+  });
 });
+
+// // ✅ Error handling middleware
+// app.use((err, req, res, next) => {
+//   console.error(' Server Error:', err.message);
+//   res.status(err.status || 500).json({
+//     error: isProduction ? 'Internal Server Error' : err.message
+//   });
+// });
 
 // ✅ Start server
 server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(` Server running at http://localhost:${PORT}`);
+
 });

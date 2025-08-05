@@ -1,62 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const DirectMessage = require('../models/DirectMessage');
-const Message = require('../models/ChatModel');
+const Message = require('../models/ChatModel'); // Assuming you have a Message model
 const isloggedIn = require('../MiddleWare/middleware');
-const mongoose = require('mongoose');
-
-// Helper function to validate ObjectId
-const isValidObjectId = (id) => {
-  return mongoose.Types.ObjectId.isValid(id);
-};
-
-// Helper function to safely get profile picture URL
-const getProfilePicUrl = (profilePicture) => {
-  if (!profilePicture) return null;
-  
-  // Handle different formats of profile picture paths
-  if (profilePicture.startsWith('http')) {
-    return profilePicture;
-  }
-  
-  // Extract filename from path
-  const filename = profilePicture.split('/').pop();
-  return `/uploads/profile-pics/${filename}`;
-};
+const multer = require('multer');
+const upload = multer();
 
 // ✅ Create or get existing one-on-one chat
 router.post('/', isloggedIn, async (req, res) => {
+  const userId = req.session.user._id;
+  const { otherUserId } = req.body;
+
+  console.log('Creating or getting chat for user:', userId, 'with other user:', otherUserId);
+
+  if (!userId || !otherUserId) {
+    return res.status(400).json({ message: "Both userId and otherUserId are required" });
+  }
+
   try {
-    const userId = req.session?.user?._id;
-    const { otherUserId } = req.body;
-
-    console.log("userId from session:", userId);
-    console.log("otherUserId from request body:", otherUserId);
-
-    // Validate required fields
-    if (!userId || !otherUserId) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Both userId and otherUserId are required" 
-      });
-    }
-
-    // Validate ObjectIds
-    if (!isValidObjectId(userId) || !isValidObjectId(otherUserId)) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid user IDs provided" 
-      });
-    }
-
-    // Don't allow chat with yourself
-    if (userId.toString() === otherUserId.toString()) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Cannot create chat with yourself" 
-      });
-    }
-
     let chat = await DirectMessage.findOne({
       members: { $all: [userId, otherUserId], $size: 2 },
     }).populate("members", "username profilePicture email _id");
@@ -71,54 +32,24 @@ router.post('/', isloggedIn, async (req, res) => {
     }
 
     // Format response with user info for easy frontend access
-    const otherUser = chat.members.find(member => member._id.toString() !== userId.toString());
-    const currentUser = chat.members.find(member => member._id.toString() === userId.toString());
-
     const formattedChat = {
       ...chat.toObject(),
-      otherUser: otherUser ? {
-        ...otherUser.toObject(),
-        profilePicture: getProfilePicUrl(otherUser.profilePicture)
-      } : null,
-      currentUser: currentUser ? {
-        ...currentUser.toObject(),
-        profilePicture: getProfilePicUrl(currentUser.profilePicture)
-      } : null
+      otherUser: chat.members.find(member => member._id.toString() !== userId.toString()),
+      currentUser: chat.members.find(member => member._id.toString() === userId.toString())
     };
 
-    res.status(200).json({
-      success: true,
-      data: formattedChat
-    });
+    res.status(200).json(formattedChat);
   } catch (err) {
-    console.error('Error in POST /:', err);
-    res.status(500).json({ 
-      success: false,
-      message: "Server error while creating/getting chat",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 // ✅ Get chat list with proper profile population
 router.get('/chatlist', isloggedIn, async (req, res) => {
+  const userId = req.session.user._id;
+
   try {
-    const userId = req.session?.user?._id;
-
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false,
-        message: "User not authenticated" 
-      });
-    }
-
-    if (!isValidObjectId(userId)) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid user ID" 
-      });
-    }
-
     const chats = await DirectMessage.find({
       members: userId,
     })
@@ -140,56 +71,27 @@ router.get('/chatlist', isloggedIn, async (req, res) => {
       
       return {
         ...chat.toObject(),
-        otherUser: otherUser ? {
-          ...otherUser.toObject(),
-          profilePicture: getProfilePicUrl(otherUser.profilePicture)
-        } : null,
-        // Keep backward compatibility
+        otherUser,
+        // Add profile picture URL if it exists
         otherUserProfilePic: otherUser?.profilePicture ? 
-          getProfilePicUrl(otherUser.profilePicture) : null
+          `/uploads/profile-pics/${otherUser.profilePicture.split('/').pop()}` : null
       };
     });
 
-    res.status(200).json({
-      success: true,
-      data: formattedChats
-    });
+    res.status(200).json(formattedChats);
   } catch (err) {
-    console.error('Error in GET /chatlist:', err);
-    res.status(500).json({ 
-      success: false,
-      message: "Server error while fetching chat list",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 // ✅ Get messages for a specific chat with sender profile pictures
 router.get('/:chatId/messages', isloggedIn, async (req, res) => {
+  const userId = req.session.user._id;
+  const { chatId } = req.params;
+  const { page = 1, limit = 50 } = req.query;
+
   try {
-    const userId = req.session?.user?._id;
-    const { chatId } = req.params;
-    const { page = 1, limit = 50 } = req.query;
-
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false,
-        message: "User not authenticated" 
-      });
-    }
-
-    // Validate ObjectIds
-    if (!isValidObjectId(userId) || !isValidObjectId(chatId)) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid user ID or chat ID" 
-      });
-    }
-
-    // Validate pagination parameters
-    const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 messages per request
-
     // Verify user is member of this chat
     const chat = await DirectMessage.findOne({
       _id: chatId,
@@ -197,87 +99,48 @@ router.get('/:chatId/messages', isloggedIn, async (req, res) => {
     });
 
     if (!chat) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Chat not found or access denied" 
-      });
+      return res.status(404).json({ message: "Chat not found or access denied" });
     }
 
     // Get messages with sender profile pictures
-    const messages = await Message.find({chat: chatId })
+    const messages = await Message.find({ chatId })
       .populate({
         path: "sender",
         select: "username profilePicture email _id"
       })
       .sort({ createdAt: -1 })
-      .limit(limitNum)
-      .skip((pageNum - 1) * limitNum);
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
     // Format messages with profile picture URLs
     const formattedMessages = messages.reverse().map(message => ({
       ...message.toObject(),
       senderProfilePic: message.sender?.profilePicture ? 
-        getProfilePicUrl(message.sender.profilePicture) : null
+        `PUBLIC/uploads/profile-pics/${message.sender.profilePicture.split('/').pop()}` : null
     }));
 
     res.status(200).json({
-      success: true,
-      data: {
-        messages: formattedMessages,
-        currentPage: pageNum,
-        hasMore: messages.length === limitNum,
-        totalMessages: formattedMessages.length
-      }
+      messages: formattedMessages,
+      currentPage: parseInt(page),
+      hasMore: messages.length === parseInt(limit)
     });
   } catch (err) {
-    console.error('Error in GET /:chatId/messages:', err);
-    res.status(500).json({ 
-      success: false,
-      message: "Server error while fetching messages",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// ✅ Send message in chat
-router.post('/:chatId/messages', isloggedIn, async (req, res) => {
+// ✅ Send message in chat - FIXED VERSION
+router.post('/:chatId/messages', isloggedIn, upload.none(), async (req, res) => {
+  const userId = req.session.user._id;
+  const { chatId } = req.params;
+  const { content, messageType = 'text' } = req.body;
+
+  if (!content || !content.trim()) {
+    return res.status(400).json({ message: "Message content is required" });
+  }
+
   try {
-    const userId = req.session?.user?._id;
-    const { chatId } = req.params;
-    const { content, messageType = 'text' } = req.body;
-
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false,
-        message: "User not authenticated" 
-      });
-    }
-
-    // Validate ObjectIds
-    if (!isValidObjectId(userId) || !isValidObjectId(chatId)) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid user ID or chat ID" 
-      });
-    }
-
-    // Validate message content
-    if (!content || typeof content !== 'string' || !content.trim()) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Message content is required" 
-      });
-    }
-
-    // Validate message type
-    const validMessageTypes = ['text', 'image', 'file', 'emoji'];
-    if (!validMessageTypes.includes(messageType)) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid message type" 
-      });
-    }
-
     // Verify user is member of this chat
     const chat = await DirectMessage.findOne({
       _id: chatId,
@@ -285,18 +148,18 @@ router.post('/:chatId/messages', isloggedIn, async (req, res) => {
     });
 
     if (!chat) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Chat not found or access denied" 
-      });
+      return res.status(404).json({ message: "Chat not found or access denied" });
     }
 
-    // Create new message
+    // ✅ FIXED: Create new message with correct field names
     const message = new Message({
-      chatId,
+      chat: chatId,              // ✅ Changed from chatId to chat
+      chatModel: 'DirectMessage', // ✅ Added required chatModel field
       sender: userId,
       content: content.trim(),
-      messageType
+      messageType,
+      status: "sent",            // ✅ Added status field if required
+      readBy: [userId],          // ✅ Added readBy field if required
     });
 
     await message.save();
@@ -316,84 +179,13 @@ router.post('/:chatId/messages', isloggedIn, async (req, res) => {
     const formattedMessage = {
       ...message.toObject(),
       senderProfilePic: message.sender?.profilePicture ? 
-        getProfilePicUrl(message.sender.profilePicture) : null
+        `/uploads/profile-pics/${message.sender.profilePicture.split('/').pop()}` : null
     };
 
-    res.status(201).json({
-      success: true,
-      data: formattedMessage
-    });
+    res.status(201).json(formattedMessage);
   } catch (err) {
-    console.error('Error in POST /:chatId/messages:', err);
-    res.status(500).json({ 
-      success: false,
-      message: "Server error while sending message",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
-});
-
-// ✅ Delete a message (optional enhancement)
-router.delete('/:chatId/messages/:messageId', isloggedIn, async (req, res) => {
-  try {
-    const userId = req.session?.user?._id;
-    const { chatId, messageId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false,
-        message: "User not authenticated" 
-      });
-    }
-
-    // Validate ObjectIds
-    if (!isValidObjectId(userId) || !isValidObjectId(chatId) || !isValidObjectId(messageId)) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Invalid IDs provided" 
-      });
-    }
-
-    // Verify user is member of this chat
-    const chat = await DirectMessage.findOne({
-      _id: chatId,
-      members: userId
-    });
-
-    if (!chat) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Chat not found or access denied" 
-      });
-    }
-
-    // Find and verify message ownership
-    const message = await Message.findOne({
-      _id: messageId,
-      chatId: chatId,
-      sender: userId
-    });
-
-    if (!message) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Message not found or you don't have permission to delete it" 
-      });
-    }
-
-    await Message.findByIdAndDelete(messageId);
-
-    res.status(200).json({
-      success: true,
-      message: "Message deleted successfully"
-    });
-  } catch (err) {
-    console.error('Error in DELETE /:chatId/messages/:messageId:', err);
-    res.status(500).json({ 
-      success: false,
-      message: "Server error while deleting message",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    console.error('Error sending message:', err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 

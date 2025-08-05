@@ -234,4 +234,12 @@ router.post("/logout", (req, res) => {
   });
 });
 
+router.get("/check", (req, res) => {
+  if (req.session && req.session.user) {
+    res.json({ loggedIn: true, user: req.session.user });
+  } else {
+    res.status(401).json({ loggedIn: false });
+  }
+});
+
 module.exports = router;
