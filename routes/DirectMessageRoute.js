@@ -3,15 +3,12 @@ const router = express.Router();
 const DirectMessage = require('../models/DirectMessage');
 const Message = require('../models/ChatModel'); // Assuming you have a Message model
 const isloggedIn = require('../MiddleWare/middleware');
-const multer = require('multer');
-const upload = multer();
 
 // ✅ Create or get existing one-on-one chat
 router.post('/', isloggedIn, async (req, res) => {
   const userId = req.session.user._id;
   const { otherUserId } = req.body;
 
-  console.log('Creating or getting chat for user:', userId, 'with other user:', otherUserId);
 
   if (!userId || !otherUserId) {
     return res.status(400).json({ message: "Both userId and otherUserId are required" });
@@ -130,8 +127,8 @@ router.get('/:chatId/messages', isloggedIn, async (req, res) => {
   }
 });
 
-// ✅ Send message in chat - FIXED VERSION
-router.post('/:chatId/messages', isloggedIn, upload.none(), async (req, res) => {
+// ✅ Send message in chat
+router.post('/:chatId/messages', isloggedIn, async (req, res) => {
   const userId = req.session.user._id;
   const { chatId } = req.params;
   const { content, messageType = 'text' } = req.body;
@@ -184,7 +181,7 @@ router.post('/:chatId/messages', isloggedIn, upload.none(), async (req, res) => 
 
     res.status(201).json(formattedMessage);
   } catch (err) {
-    console.error('Error sending message:', err);
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });

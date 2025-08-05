@@ -9,7 +9,7 @@ const Chat = require('../models/ChatModel');            // if exists
 const { uploadGeneral, handleMulterError } = require('../Config/multerConfig');
 
 // ✅ Send message with optional image upload
-router.post('/', isLoggedIn, uploadGeneral.any(), handleMulterError, async (req, res) => {
+router.post('/', isLoggedIn, uploadGeneral.single('image'), handleMulterError, async (req, res) => {
   try {
     const { chat, chatModel, content } = req.body;
     const sender = req.session.user._id;
@@ -114,13 +114,11 @@ router.delete('/:messageId', isLoggedIn, async (req, res) => {
     }
 
     // Delete associated image file if it exists
-   if (message.imageUrl) {
-  const { deleteFile } = require('../Config/multerConfig');
-  const publicId = message.imageUrl.split('/').pop().split('.')[0];
-  const fullPublicId = `animehub/general/${publicId}`;
-  await deleteFile(fullPublicId);
-}
-
+    if (message.imageUrl) {
+      const { deleteFile } = require('../Config/multerConfig');
+      const imagePath = path.join(__dirname, '..', 'public', message.imageUrl);
+      deleteFile(imagePath);
+    }
 
     await Message.findByIdAndDelete(messageId);
     res.json({ success: true, message: "Message deleted successfully" });
