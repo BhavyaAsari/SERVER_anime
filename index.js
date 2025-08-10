@@ -16,6 +16,8 @@ const PORT = process.env.PORT || 3000;
 //  Must declare first before using
 const isProduction = process.env.NODE_ENV === 'production';
 
+
+
 //  Updated allowedOrigins to include your frontend URL
 app.use(cors({
   origin: (origin, cb) => {
@@ -41,6 +43,10 @@ app.use(cors({
 // cloudinary.config();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+if (isProduction) {
+  app.set('trust proxy', 1); // trust the first proxy (Render's load balancer)
+}
 
 // Session handling with updated configuration
 app.use(session({
