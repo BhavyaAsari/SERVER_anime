@@ -9,8 +9,7 @@ const extractPublicId = (imageUrl) => {
   if (!imageUrl) return null;
   
   try {
-    // Extract the public ID from Cloudinary URL
-    // Example: https://res.cloudinary.com/your-cloud/image/upload/v1234567890/animehub/review-images/filename.jpg
+  
     const urlParts = imageUrl.split('/');
     const filename = urlParts[urlParts.length - 1];
     const publicId = `animehub/review-images/${filename.split('.')[0]}`;

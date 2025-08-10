@@ -13,33 +13,36 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-// ✅ Must declare first before using
+//  Must declare first before using
 const isProduction = process.env.NODE_ENV === 'production';
 
-// ✅ Updated allowedOrigins to include your frontend URL
-const allowedOrigins = isProduction
-  ? ['https://animehub-one.vercel.app']
-  : [
-      'http://localhost:5173', 
-      'http://localhost:3500', 
-      'http://localhost:5500',
-      'http://127.0.0.1:5500',  // Sometimes Live Server uses 127.0.0.1
-      'null' // For file:// protocol during development
+//  Updated allowedOrigins to include your frontend URL
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // Allow no-origin (Postman, curl)
+
+    const allowed = [
+      'https://animehub-one.vercel.app', // prod
     ];
 
-// ✅ CORS setup with better error handling
-app.use(cors({
-  origin: allowedOrigins,
+    // allow localhost & 127.0.0.1 with any port
+    if (/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+      return cb(null, true);
+    }
+
+    if (allowed.includes(origin)) return cb(null, true);
+
+    cb(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 
-// ✅ Handle preflight requests
 // 
 // cloudinary.config();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ✅ Session handling with updated configuration
+// Session handling with updated configuration
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret_change_in_production',
   resave: false,
@@ -58,21 +61,21 @@ app.use(session({
 
 
 
-// ✅ MongoDB connection
+//  MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log("✅ MongoDB connected successfully"))
-  .catch((err) => console.error("❌ MongoDB connection failed:", err));
+  .then(() => console.log(" MongoDB connected successfully"))
+  .catch((err) => console.error(" MongoDB connection failed:", err));
 
-// ✅ Serve static files (if any)
+//  Serve static files (if any)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ API routes
+//  API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/one-on-one', require('./routes/DirectMessageRoute'));
 app.use('/api/messages', require('./routes/MessageRoute'));
 
-// ✅ HTTP + WebSocket server
+//  HTTP + WebSocket server
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -119,7 +122,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// ✅ Health check route
+// Health check route
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Your AnimeHub backend is working!',
@@ -128,7 +131,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// ✅ Error handling middleware
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(' Server Error:', err.message);
   res.status(err.status || 500).json({
@@ -136,7 +139,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// // ✅ Error handling middleware
+// //  Error handling middleware
 // app.use((err, req, res, next) => {
 //   console.error(' Server Error:', err.message);
 //   res.status(err.status || 500).json({
@@ -144,7 +147,7 @@ app.use((err, req, res, next) => {
 //   });
 // });
 
-// ✅ Start server
+//  Start server
 server.listen(PORT, () => {
   console.log(` Server running at http://localhost:${PORT}`);
 
